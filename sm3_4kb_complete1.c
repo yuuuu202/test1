@@ -32,6 +32,9 @@
 #endif
 #include <sched.h>
 
+// 函数声明
+void sm3_4kb_parallel(const uint8_t* input, uint8_t* output, int block_count, int num_threads);
+
 // SM3算法常量
 static const uint32_t SM3_IV[8] = {
     0x7380166f, 0x4914b2b9, 0x172442d7, 0xda8a0600,
@@ -102,7 +105,13 @@ static inline void sm3_compress_hw(uint32_t* state, const uint32_t* block) {
     uint32x4_t block_vec[4];
     for (int i = 0; i < 4; i++) {
         block_vec[i] = vld1q_u32(&block[i * 4]);
-        block_vec[i] = vrev32q_u32(block_vec[i]);  // 字节序转换
+        // 使用vrev64q_u32然后重新排列来实现32位字节序转换
+        block_vec[i] = vrev64q_u32(block_vec[i]);
+        // 手动交换32位字内的字节序
+        uint32x4_t temp = vshlq_n_u32(block_vec[i], 8);
+        uint32x4_t temp2 = vshrq_n_u32(block_vec[i], 8);
+        block_vec[i] = vorrq_u32(vandq_u32(temp, vdupq_n_u32(0xFF00FF00)), 
+                                 vandq_u32(temp2, vdupq_n_u32(0x00FF00FF)));
         vst1q_u32(&W[i * 4], block_vec[i]);
     }
 #else
@@ -308,8 +317,18 @@ void sm3_4kb_optimized(const uint8_t* input, uint8_t* output) {
     uint32x4_t state_vec[2];
     state_vec[0] = vld1q_u32(&state[0]);
     state_vec[1] = vld1q_u32(&state[4]);
-    state_vec[0] = vrev32q_u32(state_vec[0]);
-    state_vec[1] = vrev32q_u32(state_vec[1]);
+    
+    // 手动实现32位字节序转换
+    for (int i = 0; i < 2; i++) {
+        // 使用vrev64q_u32然后重新排列来实现32位字节序转换
+        state_vec[i] = vrev64q_u32(state_vec[i]);
+        // 手动交换32位字内的字节序
+        uint32x4_t temp = vshlq_n_u32(state_vec[i], 8);
+        uint32x4_t temp2 = vshrq_n_u32(state_vec[i], 8);
+        state_vec[i] = vorrq_u32(vandq_u32(temp, vdupq_n_u32(0xFF00FF00)), 
+                                 vandq_u32(temp2, vdupq_n_u32(0x00FF00FF)));
+    }
+    
     vst1q_u32((uint32_t*)aligned_output, state_vec[0]);
     vst1q_u32((uint32_t*)(aligned_output + 16), state_vec[1]);
 #else
