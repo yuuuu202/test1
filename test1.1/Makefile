@@ -2,8 +2,14 @@
 # Target Platform: ARMv8.2+ with crypto extensions
 
 CC = gcc
-CFLAGS = -O3 -funroll-loops -ftree-vectorize -pthread -Wall -Wextra
-ARM_FLAGS = -march=armv8.2-a+crypto+aes+sm3+sm4
+# 优化版编译选项：针对单线程吞吐率最大化
+CFLAGS = -O3 -funroll-loops -ftree-vectorize -finline-functions -ffast-math \
+         -flto -fomit-frame-pointer -pthread -Wall -Wextra
+# 激进优化选项（可选，进一步提升性能）
+CFLAGS_AGGRESSIVE = -O3 -funroll-loops -ftree-vectorize -finline-functions \
+                    -ffast-math -flto -fomit-frame-pointer -march=native \
+                    -mtune=native -pthread -Wall
+ARM_FLAGS = -march=armv8.2-a+crypto+aes+sha2+sm3+sm4
 LIBS = -lm -lpthread
 
 # 目标文件
@@ -15,11 +21,19 @@ TEST_TARGET = test_correctness
 # 默认目标
 all: $(TARGET)
 
-# ARMv8平台编译（华为云KC2）
+# ARMv8平台编译（华为云KC2）- 优化版
 arm: $(SRC)
 	$(CC) $(ARM_FLAGS) $(CFLAGS) -o $(TARGET)_arm $(SRC) $(LIBS)
 	@echo "编译完成: $(TARGET)_arm (ARMv8优化版本)"
 	@echo "支持指令集: AES, SM3, SM4, SHA2, NEON"
+	@echo "优化级别: 标准优化 (O3 + LTO + inline + unroll)"
+
+# ARMv8平台激进优化版（最大性能）
+arm_aggressive: $(SRC)
+	$(CC) $(CFLAGS_AGGRESSIVE) -o $(TARGET)_arm_opt $(SRC) $(LIBS)
+	@echo "编译完成: $(TARGET)_arm_opt (ARMv8激进优化版本)"
+	@echo "优化级别: 激进优化 (native + all optimizations)"
+	@echo "警告: 此版本仅能在编译时的CPU架构上运行"
 
 # 通用编译（兼容模式）
 generic: $(SRC)
@@ -75,6 +89,7 @@ install: arm
 help:
 	@echo "可用目标:"
 	@echo "  make arm              - 编译ARMv8优化版本（推荐用于华为云KC2）"
+	@echo "  make arm_aggressive   - 编译ARMv8激进优化版本（最大性能，仅限当前CPU）"
 	@echo "  make generic          - 编译通用兼容版本"
 	@echo "  make debug            - 编译调试版本"
 	@echo "  make profile          - 编译性能分析版本"
@@ -87,5 +102,5 @@ help:
 	@echo "  make install          - 安装到系统"
 	@echo "  make help             - 显示此帮助信息"
 
-.PHONY: all arm generic debug profile x86 test test_build test_correctness test_all clean install help
+.PHONY: all arm arm_aggressive generic debug profile x86 test test_build test_correctness test_all clean install help
 
